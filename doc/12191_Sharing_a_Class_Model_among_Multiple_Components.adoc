@@ -1,0 +1,177 @@
+== Sharing a Class Model among Multiple Components 
+
+=== 1 Abstract
+
+Ciera does not support sharing a class model among multiple components within the same application.  An approach for adding this capability is described below.
+
+=== 2 Introduction and Background
+
+Refer to <<dr-1>> for background.
+
+=== 3 Requirements
+==== 3.1 Support Compilation of Applications Using Shared Class Models
+
+Enable successful compilation of an application containing two or more components 
+referring to at least one common class model via package reference.  Throughout this
+section the term "shared" refers to model elements defined within a package referred 
+to by two or more components.  Supported aspects for a component referring to a shared
+class model via package reference include:
+
+. Import a shared class and establish an association between it and a class defined within the component
+. Import shared classes and establish associations between them
+. Establish and remove a link across any association described above
+. Create and delete instances of shared classes
+. Read and write attributes of instances of shared classes
+. Invoke class-based and instance-based operations of shared classes
+. Generate an event to an instance of a shared class
+. Receive an event from an instance of a shared class (via pre-created
+event instance provided to the instance of a shared class as an event
+or operation parameter or an attribute value)
+
+=== 4 Analysis
+
+Fundamental to the Ciera architecture (as of 2.4.0) is the assumption that each class
+is defined in precisely one component.  Adding the capability to share a class model
+among multiple components invalidates this assumption, requiring significant adjustments to 
+the architecture model, the transformations that populate it, and the rendering operations
+and templates that rely on it. 
+
+=== 5 Design
+
+==== 5.1 Add ClassInComponent, RelationshipInComponent, and InvocableInComponent
+
+The existing Ciera architecture assumes that each instance of Class, 
+Relationship, and InvocableObject is specific to a single component.  Supporting shared class models
+invalidates this assumption, so the architecture class models must be adjusted accordingly.
+
+Change the multiplicity of R408 and R448 to many-to-many, adding
+associative classes ClassInComponent and RelationshipInComponent 
+to represent component-specific application classes and associations.
+Add a new many-to-many association between InvocableObject and 
+ComponentDefinition and a new associative class, InvocableInComponent,
+related to CodeBlock across R4000 which remains otherwise unchanged.
+
+As associations may appear in the context of multiple components, the selector structure which supports 
+implementation must change. Selectors become component-specific: Instance Selectors relate to ClassInComponent; 
+Set Selectors relate to ClassSet, which is now a set of ClassInComponent instances.
+
+The multiplicity of R409 remains unchanged, and the existing Class
+class then represents the component-independent application class
+while the the Relationship class represents component-independent 
+associations.
+
+Since Class and Relationship are no longer component-specific, the referential attributes 
+formalizing associations between ComponentDefinition and these classes are removed from
+their identifiers, which has a ripple effect on all classes formalizing associations 
+with Class and Relationship using the identifiers for these two classes.
+
+The terminology here may be a bit confusing.  Since the primary use case envisioned 
+is one of multiple components within the same model-compilation unit sharing one or 
+more class models defined outside _any_ component, we use "component-independent"
+to refer to generated artifacts that are independent of the components referring to 
+the shared class model.  However, it is possible that a shared class model is defined
+within a component which contains nested components referring to that shared class model.
+In this case, the generated "component-independent" artifacts are actually specific to 
+the containing component, but independent of the contained, referring components.
+
+For a shared class defined outside the component in which it is used, the component-independent 
+interface is rendered from from Class.  The component-specific interface and implementation are
+rendered from ClassInComponent.  For a class defined within the component in which it is used, the generated code is
+is unchanged relative to that produced by the existing compiler.  
+
+Only classes defined outside the component in which they are used require a component-independent interface.  In this 
+case the component-specific interface extends the component-independent interface. The component-independent
+interface declares no methods and acts only as a common ancestor for all component-specific renditions of the class. 
+The package hierarchy in which the relevant modeled class is defined is replicated under the root package, 
+and the component-independent interface resides within the resulting package hierarchy, outside the component-specific
+packages in which the shared class is used.
+
+==== 5.2 Associate StateMachine with ClassInComponent Instead of Class
+
+Since an instance of StateMachine is created for each component that
+refers to a particular modeled class, StateMachine must be associated
+with ClassInComponent instead of Class across R4750.
+
+==== 5.3 Associate ClassSet with ClassInComponent Instead of Class
+
+Each instance of ClassSet contains a set of component-specific class instances, 
+so it is associated with ClassInComponent instead of Class.
+
+==== 5.4 Use InvocableInComponent for Transforming OAL Bodies
+
+Since each instance of CodeBlock is component-specific, this class is associated with
+InvocableInComponent across R4000.  Transforming OAL bodies is accomplished by iterating 
+over all instances of InvocableInComponent.  The association between CodeBlock and InvocableInComponent 
+enables statements that require knowledge of the component in which they 
+reside (e.g., relate and unrelate) to find the appropriate instance of ComponentDefinition.
+
+==== 5.5 Extend Type System
+
+The type system is modified to support references to and resolution of component-independent class types 
+as well as component-specific class types and class set types.  
+
+A new subtype of Type, ComponentSpecificType, is added, with ComponentInClass and ClassSet as subtypes.
+Two new associations are added to the type class model, one indicating the defining component for a 
+component-specific type and another indicating the referring component for each unresolved type.
+
+Most existing callers requesting a type reference remain unchanged except for the need to pass the instance of ComponentDefinition within which the reference is being added.  For the cases in which a reference to a 
+component-independent class type is required, a new operation is provided.  
+
+Type::Resolve() is invoked to resolve built-in, enumerated, and user-defined types while 
+ComponentSpecificType::resolve() is used for resolving ClassSet and ClassInComponent types.
+A new operation is added to Type for resolving component-independent class types.
+
+As some types may now have component-dependent variants, adding type import directives 
+to a file must ensure that the correct variant - if there is one - is selected.
+Accordingly, the various subtypes of file are given an optional deferred operation which 
+determines whether the file subtype has relevance to the component being processed and it is, 
+therefore, appropriate to import the proffered type.
+
+==== 5.6 Support Utilities (EEs) in Shared Packages
+
+A pattern similar to that of Class and ClassInComponent already exists with Utility and UtilityReference,
+so it is exploited to support a Utility defined within a shared package which is referred to via package
+reference by two or more components.  
+
+Utility and UtilityFunction are treated as component-independent classes with a single instance created
+for each EE and bridge operation respectively in the system.  Similar to the approach used for ClassInComponent,
+rendering of generated code for each EE in the system is now done by UtilityInComponent::render().  Utility is 
+replaced by UtilityInComponent (renamed from UtilityReference) as a subtype of File. UtilityInComponent denotes 
+that the definition of a Utility has been encountered in a package within the component. A separate association 
+denotes that a component merely invokes one or more Utility operations, which is required for rendering the appropriate 
+utility initialization for the component.
+ 
+As part of this work, an OAL body associated with a bridge operation is now translated (ref. <<dr-2>>).
+
+=== 6 Implementation Comments
+
+==== 6.1 Bridge Operations with OAL Activities
+
+At present, Ciera does not translate an OAL activity specified for a bridge operation (ref. <<dr-2>>).
+As part of the work involved in this issue necessitated adding InvocableInComponent as a means of supporting component-specific 
+versions of defined Utilities, the opportunity was taken to associate a body with the transformed Utility.
+
+=== 7 Acceptance Test
+
+Verify that test models, including at least one with two or more components referring
+to a shared class via package reference, compile successfully and produce the expected 
+code.
+
+=== 8 User Documentation
+
+No changes to the user documentation are required.
+
+=== 9 Code Changes
+
+- https://github.com/johnrwolfe/ciera/
+- branch: 12191_Sharing_class_models_among_components
+
+==== 9.1 Files changed due to metamodel update - no functional change:
+* tool-core/architecture/application/Application/Application.xtuml
+* tool-core/architecture/file/GeneralFile/GeneralFile.xtuml
+* tool-core/architecture/type/UserDefinedType/UserDefinedType.xtuml
+
+=== 10 Document References
+
+. [[dr-1]] https://support.onefact.net/issues/12191[12191 - Reusing a class in multiple domains]
+. [[dr-2]] https://support.onefact.net/issues/12236[12236 - OAL activity in bridge operation not translated]

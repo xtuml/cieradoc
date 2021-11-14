@@ -1,0 +1,251 @@
+== Ciera compiler coverage analysis
+
+=== 1 Abstract
+
+This note aims to concretely define what parts of the xtUML language are
+supported by Ciera architecture and code generation.  The analysis will be
+organize by OOA of OOA subsystem and elements will be categorized either as
+having full support, partial support, or no support.  For partial support
+elements, the level of support will be described.
+
+=== 2 Introduction and Background
+
+Since Ciera was first developed pragmatically as a personal side project, its
+design and implementation was not driven by the same requirements as a
+"production" model compiler -- pieces were implemented little by litte as
+needed by the few applications it was used to translate. Therefore, it is not
+complete and coverage of the xtUML language is not known. This note aims to
+provide firm answers to questions about language coverage.
+
+=== 3 Requirements
+
+==== 3.1 Ciera shall be analyzed for coverage of the xtUML language
+
+==== 3.2 All model elements of the xtUML meta-model meaningful to execution semantics shall be considered
+
+==== 3.3 Each element (or group of elements as fits the situation) shall be designated as having full support, partial support, or no support.
+
+=== 4 Analysis
+
+==== 4.1 Empirical analysis
+
+First, I started my analysis by `grep`ing the source OAL of the model compiler
+for key letters of OOA of OOA classes and OOA of OOA relationship numbers. While
+this is not a conclusive test, it will give me an idea of what chunks are
+missing. Through a series of shell commands, I manipulated the xtUML schema
+(`xtumlmc_schema.sql` from the `xtuml/mc` repository) to be a list of key
+letters and relationships, each on one line. There are 888 unique classes and
+relationships in the OOA of OOA schema (including translation extensions). Then
+I used the following archetype to separate the structural Ciera model from the
+OAL. I passed the pre-build output of the Ciera source project to the archetype.
+There are 8312 lines of OAL in the Ciera compiler project.
+
+ .select many d_tsvcs from instances of D_TSVC
+ .for each d_tsvc in d_tsvcs
+ ${d_tsvc.Action_Semantics}
+ .end for
+ .select many o_dbattrs from instances of O_DBATTR
+ .for each o_dbattr in o_dbattrs
+ ${o_dbattr.Action_Semantics}
+ .end for
+ .select many o_tfrs from instances of O_TFR
+ .for each o_tfr in o_tfrs
+ ${o_tfr.Action_Semantics}
+ .end for
+ .select many sm_acts from instances of SM_ACT
+ .for each sm_act in sm_acts
+ ${sm_act.Action_Semantics}
+ .end for
+ .select many spr_pos from instances of SPR_PO
+ .for each spr_po in spr_pos
+ ${spr_po.Action_Semantics}
+ .end for
+ .select many spr_pss from instances of SPR_PS
+ .for each spr_ps in spr_pss
+ ${spr_ps.Action_Semantics}
+ .end for
+ .select many spr_ros from instances of SPR_RO
+ .for each spr_ro in spr_ros
+ ${spr_ro.Action_Semantics}
+ .end for
+ .select many spr_rss from instances of SPR_RS
+ .for each spr_rs in spr_rss
+ ${spr_rs.Action_Semantics}
+ .end for
+ .select many s_brgs from instances of S_BRG
+ .for each s_brg in s_brgs
+ ${s_brg.Action_Semantics}
+ .end for
+ .select many s_syncs from instances of S_SYNC
+ .for each s_sync in s_syncs
+ ${s_sync.Action_Semantics}
+ .end for
+ .emit to file "oal.txt"
+
+Run the archetype with:
+
+ python -m rsl.gen_erate -nopersist -import xtumlmc_schema.sql -import input.sql -arch dump_oal.arc
+
+After this, I used the following script to `grep` the OAL and report elements
+that are not present.
+
+ while read ELEM; do
+   grep $ELEM oal.txt &> /dev/null
+   if [[ $? != 0 ]]; then
+     echo $ELEM
+   fi
+ done
+
+The initial results were that 525 out of 888 elements were missing. _~41%
+coverage_
+
+Next I pared down the input elements to remove translation extensions,
+translation marking, and non executable OOA of OOA subsystems. I did this in a
+quick pass and did not attempt to remove Verifier related classes.
+
+The result from this test was 320 missing out of 683. _~53% coverage_
+
+I then separated these two categories into classes and relationships to see the
+individual coverage percentages.
+
+Classes: missing 76/224. _~66% coverage_
+
+Relationships: missing 244/459. _~46% coverage_
+
+==== 4.2 By subsystem
+
+The following is the breakdown of individual subsystems. Non executable
+subsystems (Activity, Use Case, etc.) are omitted. Subsystems that are related
+to packaging but have no bearing on execution semantics (e.g. Globals) are
+omitted when appropriate. Similarly, within subsystems, irrelevant classes are
+omitted from this analysis.
+
+===== 4.2.1 Association
+
+- Simple associations are fully supported
+- Linked associations are fully supported
+- Sub/super associations are fully supported
+- Derived associations are not supported
+
+===== 4.2.2 Body
+
+- All bodies get translated
+- All statements are supported except interface operation invocations
+- Control statements, blocks, and variable scoping are all supported
+
+===== 4.2.3 Component
+
+- Components, ports, interfaces, provisions, requirements, and satisfactions are
+  supported.
+- Executable properties, property parameters, and interface signals are
+  supported.
+- Delegations are not supported
+- Interface operations are not supported
+
+===== 4.2.4 Component Library
+
+- All imported component elements are supported
+
+===== 4.2.5 Signal Provisions and Requirements
+
+- Provided and required signals are supported
+- Provided and required operations are not supported
+
+===== 4.2.6 Constants
+
+- Constants are supported but with a caveat. Constant references are supported
+  (see <<4.2.13 Value>>), but they are treated as a macro and the value of the
+  constant replaces the reference in generated code. There is no generation of
+  code for the constant specifications themselves. Depending on the
+  requirements of the architecture, this is usually _good enough_ (this is the
+  strategy MC-3020 uses).
+
+===== 4.2.7 Deployment
+
+- Deployments are not supported
+
+===== 4.2.8 Domain
+
+- System model is supported (however in Ciera it has no semantic meaning)
+- Domain functions and parameters are supported
+- External entities, bridges, and bridge parameters are supported
+- Exceptions are not supported
+
+====== 4.2.8.1 Data types
+
+- All core types are supported
+- Instance reference types are supported (single reference and set)
+- Enumerated types are supported
+- Structured types are not supported
+- User defined types are partially supported. Ranges on UDTs is not supported
+- Array dimensions are supported
+
+===== 4.2.9 Element Packaging
+
+- Packages are supported
+- Package references are supported
+
+===== 4.2.10 Event
+
+- Create event to instance is supported
+- Create event to class is not supported
+- Create event to creator is not supported
+- Generate pre-existing event is supported
+- Generate (to instance) is supported
+- Generate to class is not supported
+- Generate to creator is not supported
+
+In general terms, class state machines and creation events are not supported.
+See <<4.2.11 State Machine>>.
+
+===== 4.2.11 State Machine
+
+- Instance state machines are partially supported
+- Class state machines are not supported
+- States, transitions, and events are supported
+- Event data items are supported
+- State entry actions are supported
+- Transition actions are not supported
+- State event matrices are supported
+- Can't happen and event ignored SEM cells are supported
+- Local events are supported
+- Polymorphic events are not supported
+- Signal events are not supported
+- Creation events are not supported
+- Final state designation is not supported (it has no effect and is treated as a
+  normal state)
+
+===== 4.2.12 Subsystem
+
+- Classes are supported
+- Operations and operation parameters are supported
+- Deferred operations are supported (not part of the official xtUML meta-model)
+- Base attributes are supported
+- Attribute default values are not supported
+- Referential attributes are supported (baseless referentials are not supported)
+- Derived attributes are supported
+- Instance identifiers are supported
+
+===== 4.2.13 Value
+
+- All values are supported except structure member values and interface message
+  values.
+- Symbolic constant values are supported as a macro (reference is replaced with
+  the value defined in the constant specification)
+- Actual parameters are supported
+- Variables are supported
+
+===== 4.2.14 General
+
+- By reference parameters are not supported
+
+==== 4.3 Commentary
+
+At first glance, looking at 66% coverage seemed grim, however this exercise has
+shown me how much of the metamodel has no need to be traversed during code
+generation. For example, during edit, a relationship may be drawn between an
+imported class and a real class. Once the relationship is drawn however, there
+is a direct link between the two `O_OBJ` instances and the `R_REL` instance
+using `R_OIR`. There is no need to travers to `O_IOBJ` during code generation
+because to the model compiler the packaging in this example has no semantic
+meaning.
