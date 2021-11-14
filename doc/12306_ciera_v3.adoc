@@ -1,0 +1,60 @@
+== Title goes here
+
+=== 1 Abstract
+
+The Ciera has several issues that are scars from its original design process as
+well as unused bits that have never been cleaned up.  This issue is raised to
+resolve some of these issues as well as clean up design mistakes from the early
+days and implement key missing functionality.
+
+=== 2 Introduction and Background
+
+
+Changes that will be made:
+
+- Clean up and simplify applciation executor
+- Naming choices more closely matches Shlaer-Mellor rather than xtUML/UML
+- Get rid of Interface/Implementation pattern -- it is not providing any value
+- Reduce reliance on Java generics
+- Update type system + try to lean more on Java types
+- Exception handling scheme done better
+- Support polymorphic events
+- Support assigner state machines
+- Support system native EEs
+
+
+=== 3 Requirements
+
+TODO
+
+=== 4 Analysis
+
+TODO
+
+=== 5 Design
+
+TODO
+
+=== 6 Work required
+
+TODO
+
+=== 7 Implementation Comments
+
+TODO
+
+=== 8 Acceptance Test
+
+TODO
+
+=== 9 User Documentation
+
+TODO
+
+=== 10 Document References
+
+TODO
+
+. [[dr-1]] https://support.onefact.net/issues/NNNNN[NNNNN - headline]
+. [[dr-2]] ...
+. [[dr-3]] link:../8073_masl_parser/8277_serial_masl_spec.md[Serial MASL (SMASL) Specification]
