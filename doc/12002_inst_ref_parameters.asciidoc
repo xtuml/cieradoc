@@ -1,0 +1,202 @@
+== inst_ref<>, inst_ref_set<> Interface-message Parameters
+
+=== 1 Abstract
+
+At present, interface-message parameters of type `inst_ref<>` and `inst_ref_set<>` are 
+not supported.  This work adds support for such parameters.  
+
+=== 2 Introduction and Background
+
+Refer to <<dr-1>> and <<dr-2>> for background.
+
+=== 3 Requirements
+
+. Support interface-message parameters of type `inst_ref<>`.
+. Support interface-message parameters of type `inst_ref_set<>`.
+. Serialize as a JSON string each instance referenced by a parameter of type
+`inst_ref<>` or `inst_ref_set<>`. 
+. The values of all application attributes and current state are passed for each 
+parameter of type `<inst_ref>`.
+. The instance population in the sending component is not affected by sending 
+one or more instances as message parameters.
+. Each instance received as a message parameter is added to the instance population
+of the receiving component.
+. Establishing associations involving received instances is the responsibility
+of the model in the receiving component.  Rationale follows:
+.. Formalizing associations is not recommended.
+.. Additional work is required to avoid passing the values of referential attributes.
+.. The values of referential attributes may be useful to the recipient regardless of 
+whether an association link is established.
+.. Only a receiving application model can know when it is appropriate to use referential 
+attribute values to establish association links between instances.    
+
+=== 4 Analysis
+
+The xtUML editor supports interface-message parameters of type `inst_ref<>` and 
+`inst_ref_set<>` as does MC-3020.  This support is useful both for communication 
+between xtUML components sharing a common class model and for interaction between 
+xtUML components and external code.  The alternative involves modeled data marshaling,
+which is inconvenient and tedious to build and maintain.  
+
+Serialization of interface-message parameters as JSON strings is currently supported
+for core types, and leveraging this approach for `inst_ref<>` and `inst_ref_set<>`
+parameters is sufficient for present needs. Rather than identify only those classes which are 
+shared between components, it will be simpler to add methods to each class; these may be of 
+benefit in future work.
+
+=== 5 Design
+
+==== 5.1 Outgoing Messages
+
+Each interface-message parameter of type `inst_ref<>` is converted 
+to a JSON string representing the attributes of the referenced instance.  
+
+Each interface-message parameter of type `inst_ref_set<>` is converted 
+to a JSON string representing each referenced instance contained within the set.
+
+==== 5.2 Incoming Messages
+
+Upon receipt of an interface message containing a parameter of type `inst_ref<>`
+the JSON string representing the instance is converted into an instance 
+of the appropriate class, added to the relevant collections (e.g., instance population and
+change log for the receiving component), and made accessible to the 
+port-message activity via the `param` keyword.
+
+Similarly, a parameter of type `inst_ref_set<>` is de-serialized from a JSON
+string into a collection of instances of the appropriate class 
+and made accessible to the port-message activity via the `param` keyword.
+
+==== 5.3 Shared Classes  class- original approach:
+
+Two components sending instances as message parameters to one another must both
+refer, via package reference, to a shared definition of the class in question.  The Java
+class generated for each xtUML class, whether shared or not, is specialized based on the 
+component using it, creating some challenges for this work.
+
+Java allows an interface definition to extend another such definition, so a
+component-independent interface for each xtUML class is added by this work such
+that every xtUML class is represented by:
+
+* A component-independent interface which publishes only:
+** xtUML-model-level attribute accessors
+** xtUML-model-level operations
+* An extended component-specific interface which publishes association methods. 
+
+Component-independent interface definitions reside in the root package. The location 
+of component-dependent interface definitions is not changed by this work.
+
+An xtUML interface definition may be referenced by many different ports
+sprouted by many different components.  A single Java interface is generated 
+for each xtUML interface definition.  For any message carrying a parameter 
+of type `inst_ref<class>`, the component-independent interface representing 
+the class of interest must be used when declaring parameters accepted by methods
+declared within such an interface.
+
+For an xtUML port formalized by an interface, a Java class that implements the 
+relevant Java interface is generated.  Methods associated with messages carrying 
+parameters of type `inst_ref<class>` must then use the component-independent 
+interface representing the class of interest when declaring parameters of type
+`inst_ref<class>`. However, the port implementation receiving an `inst_ref<class>`
+must invoke the component-specific implementation of static deserialize in order 
+to construct the appropriate instance.
+
+To summarize, for an interface message carrying a parameter of type `inst_ref<class>`, the
+component-independent interface representing the relevant class is used to declare
+arguments for methods declared or defined within the:
+
+* Java interface representing the xtUML interface of interest
+* Java port classes representing xtUML ports formalized by the xtUML interface of interest
+
+Any method representing a port-message activity accepting a parameter of type `inst_ref<class>`, 
+defined within a port class, requires special treatment to allow component-specific use of the 
+incoming argument, which is declared using the component-independent interface representing the 
+class in question.  Whenever component-specific usage of the argument is required (e.g., invocation 
+of association methods), the argument is cast to the component-specific interface for the class.
+
+==== 5.4 Shared Classes - revised approach:
+
+Work required for the resolution of issue 12191 <<dr-2>> has some overlap with the modifications required 
+for this issue. Issue 12191 will explicitly represent, in the architecture, the separation of the 
+component-independent definition of a class from the component-specific component-in-class representation.
+This naturally leads to the separation of Interface definitions postulated in the original approach.
+
+Also, by universal adoption of serialization for `inst_ref<>` and `inst_ref_set<>` parameters, the need 
+for declaring an incoming argument as component-independent is alleviated. Deserialization will always 
+produce a component-specific instance.
+
+Note: this requirement raised some measure of difficulty in discerning whether instance references in 
+a port activity should be component-specific, as proposed,  or component-independent.
+
+It further seems reasonable to serialize the entire message if any of the message parameters are of type 
+`inst_ref<>` or `inst_ref_set<>`. It may be easiest to evaluate this need during message transform when 
+each parameter type is being evaluated; an added attribute to `IMessage` class can indicate this choice to
+the port `send()` method.
+
+=== 6 Work required
+
+==== 6.1 Model Compiler
+
+. Create interface definition templates to generate component-independent interfaces for all classes, placed in the root package.
+. Modify existing component-specific interface templates to extend the component-independent class interface.
+. Add a `toString()` [ or, `serialize()`] and a static `deserialize()` methods to the component-specific implementations of each class. While 
+APIs exist for such transformations, generating methods by iteration over class attributes would allow for suppression of referential attributes. Also, JSON deserialization appears to need to create the target instance, but Ciera requires the constructor to be given a context.
+. Modify template for generating Java interface representing xtUML interface definition to use component-independent interface for 
+any class used as a message parameter.
+. Modify template for generating port class to use component-independent interface for any class used as a message parameter.
+. [ Not required if the revised approach is adopted:] Modify template for generating port-message-activity method to declare a transient variable using the component-specific
+interface for a class passed as a parameter to the method.  Initialize this variable using the value of the incoming parameter (which is
+declared using the component-independent interface for the class) and then use this variable for all references to the incoming
+parameter representing a message parameter of `type inst_ref<class>`.
+
+==== 6.2 Test Cases
+
+Develop a model supporting the test cases enumerated in <<8>>.
+
+
+=== 7 Implementation Comments
+
+See reference below to "proof-of-concept" hand-edited example.
+
+=== 8 Acceptance Test
+
+The basis for all test cases listed below is a model containing the 
+following elements:
+
+* an interface definition with messages carrying parameters
+of type `inst_ref<>` and `inst_ref_set<>` flowing from the provider
+* two components connected by the interface described above
+
+Each test case involves the provider sending a single interface message, 
+the contents of which are specific to the test case.  The receiving component
+verifies that the contents of the message are as expected.
+
+.Test cases:
+. one parameter of type `inst_ref<>` referring to an instance of a class
+containing at least one attribute of each core type
+. one parameter of type `inst_ref<>` containing an empty instance handle
+. one parameter of type `inst_ref_set<>` containing at least three instance
+handles for a class containing at least one attribute of each core type
+. one parameter of type `inst_ref_set<>` containing a single instance handle
+for a class containing at least one attribute of each core type
+. one parameter of type `inst_ref_set<>` containing an empty instance-handle
+set
+
+=== 9 User Documentation
+
+Since lack of support for interface-message parameters of type `inst_ref<>` and 
+`inst_ref_set<>` is not mentioned in the user documentation, no documentation
+changes are required.
+
+=== 10 Code Changes
+
+
+----
+ Put the file list here
+----
+
+=== 11 Document References
+
+. [[dr-1]] https://support.onefact.net/issues/12002[Ciera: Support interface message parameters of type inst_ref and inst_ref_set]
+. [[dr-2]] https://support.onefact.net/issues/12191[Ciera: Reusing a class in multiple domains]
+
+. https://github.com/amullarney/AdHocTests/tree/12002_base_interface - an hand-edited "proof-of-concept" for interfaces.

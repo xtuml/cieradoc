@@ -1,0 +1,40 @@
+== Port Message parameters as key-value pairs.
+
+=== 1 Abstract
+
+At present, parameters of a serialized Port Message are passed in an array, 
+thus requiring the recipient to be cognizant of ordering. Passing them as 
+key-value pairs eliminates this requirement.  This is motivated in part by 
+<<dr-2>> which requires serialization of instance data when parameters 
+of type `inst_ref<>` are used.
+
+=== 2 Introduction and background
+
+Refer to <<dr-1>>
+
+=== 3 Requirements
+
+Add a string key to each serialized parameter value.
+Both serialized and un-serialized messages must be supported.
+
+=== 4 Analysis
+
+Replacement of the JSONArray used in Message serialization with a JSONObject is straightforward. The Message class in runtime will be modified to provide a method for adding parameters as a key-value pair to messages requiring serialization. The render operation for such messages will be modified to invoke this method for each parameter. Message serialization will be modified to accept these packaged values. The 'deliver' method of Port will be modified to extract values by key rather than index.
+
+=== 5 Design
+
+The render operation for messages requiring serialization will be modified to generate invocation of a method to add a key-value pair to the message for each paramter.
+The render-deliver operation for Port Message will be modified to generate value retrieval using the parameter formal name as a string key rather than by index for serialized messages.
+
+=== 6 Test Cases
+
+Develop test cases to validate both serialized and un-serialized message-passing.
+
+=== 7 User Documentation
+
+For deployments that are entirely Ciera-based, this change will be transparent.
+
+=== 8 Document References
+
+. [[dr-1]] https://support.onefact.net/issues/12287[Replace positional Port Message parameters with key-value pair encoding]
+. [[dr-2]] https://support.onefact.net/issues/12002[Support interface message parameters of type inst_ref and inst_ref_set]

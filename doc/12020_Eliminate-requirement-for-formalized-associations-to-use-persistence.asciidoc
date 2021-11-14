@@ -1,0 +1,152 @@
+= 12020_Eliminate requirement for formalized associations to use persistence
+
+=== 1 Abstract
+
+The requirement to formalize associations in order to leverage the persistence facilities of the model compiler should be eliminated.
+
+
+=== 2 Introduction and Background
+
+Formalizing associations burdens the model developer with unnecessary work and adds clutter to the class diagram while adding no value to the xtUML abstraction. While it is appreciated that it may simplify model compiler support for persistence, it seems worth some effort to be able to dispense with association formalization as a requirement for persistence support. Indeed, the Ciera documentation of persistence mentions this as a goal for the future. A current xtUML user has an expressed interest in persistence, providing stimulus to advance toward this goal.
+
+=== 3 Requirements
+
+It must be sufficient to mark a component for persistence without any concern for association formalization.
+
+=== 4 Analysis
+
+On initial consideration it would appear that three avenues of exploration are worthy of consideration:
+
+. Have the model compiler manufacture identifying and referential attributes as necessary so that associations appear as formalized to the rest of the code-generation flow.
+. Modify the persistence mechanism to obviate the need for formalization of associations.
+. Investigate 3rd-party support for Java persistence; Java Persistence API (JPA) appears interesting. (Edit: not being considered at this time )
+
+Study of the existing persistence support mechanism indicates that the 2nd option above, may show promise.
+
+From the Selector class and its subtypes, Ciera currently generates private data members for each association that a class participates in. These data members hold references which identify the related instance(s) across associations. Where multiplicity dictates, these data members are declared as an instance set.
+
+In passing, it is noted that association of instances also triggers population of dedicated RelationshipSets of Relationship instances which carry identifiers of the participating instances. These relationship sets are not persisted; they are, however, recreated as association links are rebuilt when loading persisted data; their purpose is not apparent.
+
+The existing support for persistence does not persist any of this information. Instead, it is required that associations to be persisted be formalized. Thus, the formalizing attributes - which appear as model instance data - are persisted as part of data serialization. It can be argued that, besides the burden of formalization, this is a co-mingling of architecture data with modeled data.
+
+If a mechanism to support appropriate serialization of the association data held in selectors were implemented, then the formalization constraint could be removed. Furthermore, it is desirable that the persistence of the architectural realization of associations be separate from persisted model instance data. It is suggested that a distinct SQL keyword be used to distinguish association data from the INSERT statements used to denote model instance data.
+
+Note that each Java-rendered instance inherits an identifier of type UniqueId ( see package io.ciera.runtime.summit.types ) which is of type UUID.
+
+So, a proposed implementation involves:
+
+* creating serializers for selector association data, using the UUIDs of referred to instances as persistent identifiers.
+* invoking these serializers to persist association data after all instance data has been persisted.
+* recovering persisted association UUID data after all instance data has been loaded.
+* enhancing the existing generated batch_relate functions to resolve UUIDs to references, reinstating each association link.
+
+=== 5 Design
+
+Assumptions:
+ 
+* As marking for persistence is on a component boundary it is sufficient to record a relationship number, alone, as an identifier of a relationship within the component; these numbers are unique within a component.
+* As a UniqueId value (UUID) is used to identify serialized instances, it may be used to identify participant instances when reconstructing an association.
+
+
+For 1:M associations the reference produced from the Instance Selector class (i.e., the one injected into the class on the 'many' end of the association) is serialized.
+
+For M:M associations with an associative class, the references injected into the associative class are serialized.
+
+For M:M associations with no associative class, it will be necessary to emit an association table of reference pairs.
+
+Support for serializing this association data will require adding an Association serializer/loader class as a peer of Population Loader in tool-sql::loader. Participating classes are give 'selector' private attributes, representing one 'end' of each association.  These selectors may be single valued - when a representing 1:? end of an association. They may also be multi-valued ( a set ) when representing a M:? end - which is the case for a M:M with no associative class.
+
+It is only necessary to serialize these selector instances in one direction to capture sufficient data to recreate all associations. However, in order to correctly restore the association it is necessary to understand the ordering of serialized identifiers. For each association, one 'end' is deemed (based on various criteria) to be marked as the 'formalizer'. Preferentially, this selector is chosen for serialization: its owning class instance identifier is first in the serialization record. Should optimization of association traversal at some future point eliminate realization of the 'formalizer' side, it still must be possible to serialize. To allow for this possible case, when a 'non-formalizer' selector is encountered, the relationship class instance will be checked for the existence of a 'formalizer' selector; if none is found, then serialization must use this selector, taking care to emit the instance identifier of the other 'end' first in the data to preserve identifier ordering.
+
+The serializer/loader instances will be constructed by iterating over relationship class instances in tool-sql::transform::transformSQLLoader and invoking a transform operation to construct them.
+
+Each of the created association serializers render functions will be invoked by tool-sql::loader::PopulationLoader.render(); the t.populationloader template will include the rendered buffers after instance data rendering.
+
+The serializers will:
+
+* emit a single SQL record for a single-valued selector instance reference.
+* loop over a set-type selector, emitting multiple records with pairs of instance identifers.
+* emit a triplet of identifiers for an associative class and both participants; ordering must be preserved.
+
+Note: to avoid redundant serialization of selectors for participants in associative relationships it is necessary that these be identifiable during the process of generating serializers. During transformation from the ooa metamodel, in transform::transformAssociation, associative relationships are decomposed into two instances of simple association, one each between the associative class and one of the participants. +
+For ready identification of such cases while preparing selector serializers it is suggested that the two created instances of Relationship class [ tool-core::architecture::relationship ] be 'paired' using a reflexive association. Furthermore, the associative class should be chosen as the formalizer of each of the two associations ( This is, already, the case ). +
+In this way, the selectors for the associative participants will be ignored - they are not marked as formalizers. Furthermore, when the associative class selectors are chosen for serialization, the reflexive can be navigated to identify those participants allowing creation of a 3-identifier serializer to capture the complete associative relationship data. +
+As both associative selectors really refer to the same association, care must be taken not to create a second redundant serializer in each case. This can be avoided by only proceeding with selectors which navigate to a 'peer' relationship when the reflexive is navigated in the same direction as originally formalized, and rejecting any selector which discovers a 'peer' when the reflexive is successfully traversed in the opposite direction. +
+As ordering of emitted instance IDs is critical, the case of a reflexive associative is special. Arbitrarily, the order of the two emitted instances of the same non-associative class will be determined by the lexical order of their relationship phrases. +
+
+The loader will:
+
+* Identify a Relationship by number.
+* Recognize the 'chosen formalizer' participating class, and, so reconstruct the name of the 'relate' method name, using the appropriate phrase.
+* Invoke the 'relate' method, using references retrieved from resolving UUIDs of deserialized instances.
+* For decomposed associative relationships, generated methods will invoke both required simple 'relate' methods.
+
+=== 6 Work required
+
+Decide on the format of serialized association data.
+Several are proposed; as of now, proof of concept leans toward:
+
+* LINK Rnumber ID2 ( self_UUID, referred_to_UUID )
+* LINK Rnumber ID3 ( self(associative)_UUID, participant1_UUID, participant2_UUID )
+
+Recognize, these formats respect the ordering of the UUIDs.
+
+For serialization: +
+Create the serializer/loader classes and the templates their render operations will use to emit serialized data. +
+Add implementation code to create the serializer/loaders and associate them with the population loader used for instance data persistence. +
+Add serialization render invocations to the population loader render operation. +
+Add required imports to the generated loader reflecting the need to traverse some reference sets during serialization. +
+Note: serialization of identifiers is now needed in two places - instance and association data; for this reason, it is proposed to make the serialization operation class based on the UniqueId attribute serializer, thus, available to association serializers.
+
+For deserialization: +
+Enhance the SQL grammar to support the 'LINK' statement syntax and generate a loader method which uses a switch based on association number. +
+Generate 'relate' method invocations for each link case which support re-establishing the represented relationships. +
+
+Note on Packaging: +
+The tool-sql::loader package is complex: it is proposed to separate association serialization in a new package - and move batch relate there. +
+The tool-core::architecture::relationship package could be integrated with classes package giving visibility to the new reflexive. +
+
+=== 7 Implementation Comments
+
+Using the relationship number alone in persisted association data is canonical, and architecture-independent. +
+Persisting associative data as triplets is, likewise, architecture-independent. +
+The NonPersistentInstanceIds mark must not be used: links are sets of persisted instance UniqueIds. +
+
+The application SQL file does not include the architectural instance ids on which the proposed mechanism depends. An extra create method and constructor allow for loading to create instances with only attribute values as arguments, allowing the UniqueId to be initialized by the ModelInstance supertype. A mark is used to prevent the loader from expecting to retrieve an instance id on instance load. +
+( Note: for the degenerate case, where a class has no attributes, this extra create/constructor must be suppressed. ) +
+This mark will also determine whether batch_relate is required to re-instate associations - as in this case - or whether they will be re-instated by evaluation of LINK SQL statements. +
+
+A Subtype-Supertype association differs from others in that each Subtype becomes a formalizer; the Supertype is a participant class. This requires an 'inversion' of those roles in association serialization and loading. In particular, loading requires multiple 'if' tests within a single switch case. +
+
+Note: An attribute was added to the relationship class so that association type could be 'captured' at transformation time; this was found to be necessary to identify super-subtype associations for serializer configuration. +
+
+Care must be taken in generation of serializer code to avoid duplicate definition of variables when handling reflexive associations. +
+
+The result of the load marking described above, is that the generated CoreSqlLoader uses batch_relate to restore associations, but serializes associations using LINK SQL statements with instance values of UniqueId. SqlSqlLoader is generated to invoke a loader link method with IDs as parameters. LINK serializers are also generated, but apparently unused.
+
+
+=== 8 Acceptance Test
+
+A simple test application has been used to verify the behavior for a variety of association types.
+Additionally, an executable version of Ciera, which uses LINK persistence support, has satisfactorily compiled its own source code, producing an executable compiler which has been shown to execute correctly, compiling the test application which demonstrates persistence.
+
+
+=== 9 User Documentation
+
+If the proposed modification to persistence of associations is deemed acceptable, it will be necessary to document the single mark required to build Ciera versions supporting the change. And to note that formalization of associations is no longer a requirement for persistence.
+
+=== 10 Code Changes
+A new package: tool-sql::AssociationSerialzerLoader. +
+A new operation: tool-sql::transform::transformLinkSerializer. +
+Several additional template files in tool-sql::templates::loader ( and their duplicates ). +
+Additions/changes to tool-sql::loader::PopulationLoader.render(). +
+
+https://github.com/amullarney/ciera/tree/12020_bootstrap_2_4_8
+
+=== 11 Document References
+
+In this section, list all the documents that the reader may need to refer to.
+Give the full path to reference a file.
+
+. [[dr-1]] https://support.onefact.net/issues/12020
+
