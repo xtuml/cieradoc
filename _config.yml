@@ -1,0 +1,13 @@
+---
+title: Ciera
+email: levi@roxsoftware.com
+github_username: leviathan747
+remote_theme: "mmistakes/minimal-mistakes@4.24.0"
+
+plugins:
+- jekyll-paginate
+- jekyll-sitemap
+- jekyll-gist
+- jekyll-feed
+- jemoji
+- jekyll-include-cache
