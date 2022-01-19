@@ -88,3 +88,18 @@ Unit test strategy:
 - 6.2, 6.4 can happen in conjunction with 6.3
 
 - Testing is an area where outside help can really be leveraged
+
+### 8 Meeting notes
+
+Redmine link: https://support.onefact.net/projects/ciera/issues?c%5B%5D=status&c%5B%5D=subject&c%5B%5D=start_date&c%5B%5D=due_date&c%5B%5D=cf_19&c%5B%5D=assigned_to&f%5B%5D=status_id&f%5B%5D=fixed_version_id&f%5B%5D=&group_by=cf_19&op%5Bfixed_version_id%5D=%3D&op%5Bstatus_id%5D=%2A&set_filter=1&t%5B%5D=estimated_hours&t%5B%5D=&utf8=%E2%9C%93&v%5Bfixed_version_id%5D%5B%5D=39&v%5Bfixed_version_id%5D%5B%5D=43
+
+- Levi described the structure of the document
+- Cort bringd up polymorphic event document from KC in 1994, will send it
+- Levi talks about 6.1 TODO list
+- Levi shows screen shot of type system
+- Levi talks about stream types
+- Cort brings up testing and notes that this TODO list is a good head start
+  - Levi states that he can build a test plan pretty quickly that is 90%
+  - Levi to build test plan
+  - Discussing testing methods
+  - Action item: Levi to prototype the test infrastructure
