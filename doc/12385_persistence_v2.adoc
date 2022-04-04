@@ -1,0 +1,196 @@
+== Ciera Persistence v2
+
+=== 1 Abstract
+
+Many applications need to be persistent, that is to say the state of the
+application must persist between sequential executions. Persistence can also be
+used to coordinate nodes of distributed or parallel applications or to provide
+a transparent mechanism for offloading instance populations to disk in some
+high memory applications. Persistence is supported in Ciera, however the
+implementation is simplistic and does not scale with large populations.
+
+=== 2 Introduction and Background
+
+==== 2.1 Ciera state of existence
+
+At the time of writing, Ciera v3 is in beta. The latest production release
+version of Ciera is v2.6.3. Ciera v3 is a major update both architecturally and
+feature-wise. There are several things in v3 that are still in progress,
+however there are no plans to backport v3 features to v2 once out of beta.
+Incompatibilities between v2 and v3 architecture make it impossible to
+implement features compatible with both. This status makes some things a bit
+tricky as most of the time investment is currently going to v3 development,
+however v3 is not yet ready for production. This work will be analyzed,
+designed, and implemented in the context of v3. Some references may be made to
+features available in v2.
+
+==== 2.2 Existing persistence mechanisms
+
+===== 2.2.1 BridgePoint SQL loader
+
+Ciera v2 supports loading of instances via SQL insert statements produced by
+BridgePoint or pyxtuml [ref]. The mechanism supports BridgePoint-style
+populations where instances are associated via formalized relationships and
+instance identifier values. Later it was extended to support unformalized
+associations by persisting instances of the links [ref]. Instances are loaded
+from standard input or a file using the `SQL` bridge. Instances are loaded
+first and then "batch related" by iteratively searching the instance population
+for related instances by comparing foreign keys (O(n^2)). Although nothing is
+preventing it, it is not recommended to call the load bridge more than once
+as it could introduce model inconsistencies. The population can be dumped to
+a file or standard output using the `SQL` bridge at any time. All management
+of the load/dump flow is handled at the application level by the modeler.
+
+===== 2.2.2 Ciera generic loader API
+
+Ciera v2 also supports a generic loader API which allows custom Java
+implementations to be invoked by the `LOAD` bridge. The custom implementation
+is provided with hooks back into the model to create and relate instances, set
+attribute values, and call domain functions. This technique was used to develop
+the Stratus parser which parses and loads MASL models and populates the MASL
+meta model [ref]. The Stratus parser is a component of the Ciera MASL compiler.
+Only load is supported with this mechanism.
+
+===== 2.2.3 Ciera v3 persistence
+
+In v3, Ciera supports a persistence mechanism based on the Java Serialization
+mechanism [ref]. Object instances (including attribute values and current
+state), pending events, and scheduled timers are written to a binary file after
+each transaction. Depending on Ciera configuration, a transaction can be
+defined these two ways:
+
+1. [Default] The transaction starts with the handling of a _primary stimulus*_
+   or a generated event and continues until all synchronous execution is complete.
+2. The transaction starts with the handling of a _primary stimulus*_ and
+   continues until all resulting generated events are handled and all synchronous
+   execution is complete.
+
+NOTE: A **primary stimulus** refers to a spontaneous event which begins a
+thread of control. In the context of the Ciera runtime, they are: external
+signal (port message), timer expiration, generic code execution in the runtime
+context.
+
+The entire instance population of all domains is dumped at the end of each
+transaction. This is required as the Java serialization mechanism does not
+support selective replacement of persisted objects. This introduces a serious
+impediment to using persistence in any model with reasonably large populations.
+
+The primary design goal of this persistence mechanism was to assure corrupted
+model data is never persisted and to minimize data loss in the event of a
+crash.
+
+Model data can be loaded from the binary file on startup, however it is only
+loaded once and then subsequently only persisted.
+
+In order for this persistence mechanism to provide more value, a more
+sophisticated implementation will be required to track changed instances and
+selectively persist.
+
+===== 2.2.4 MASL C++ SQLite persistence
+
+The MASL C++ compiler and architecture supports persistence to local database
+files using SQLite. It is not known whether dynamically updating the database
+from multiple sources is supported.
+
+=== 3 Requirements
+
+==== 3.1 Basis of implementation
+
+This implementation shall extend and enhance the capabilities of the mechanism
+described in <<2.2.3 Ciera v3 persistence>> without removing any of its
+capabilities.
+
+==== 3.2 Support for SQL
+
+3.2.1 The implementation shall support persistence to well known SQL databases such
+as PostgresSQL, MySQL, SQLite, etc.
+
+3.2.2 This implementation shall not include a database management system but
+shall allow configuration of an existing backend database implementation.
+
+3.2.3 There shall be no restrictions on which backend database implementation
+is chosen or how it is deployed (e.g. local, over a network, file backed,
+memory backed, etc.)
+
+==== 3.3 Performance at scale
+
+The implementation shall enable applications to scale with near constant
+performance characteristics.
+
+==== 3.4 Integrity
+
+The mechanism shall enforce conditionality constraints on instance
+relationships at the transaction boundary.
+
+==== 3.5 Concurrency
+
+The implementation shall guarantee data integrity while supporting concurrent
+execution of modeled behavior without undue performance penalties.
+
+==== 3.6 Upgrade
+
+3.6.1 If a column is added to a table or a new table is created, the data shall
+quietly be upgraded and new fields shall be assigned their default values.
+
+3.6.2 If a column or table is removed, the data shall be upgraded and the
+existing data shall be dropped. A warning shall be delivered to the
+architecture.
+
+3.6.2 A mechanism to execute user defined upgrade code whether modeled or
+hand-craft shall be analyzed and considered.
+
+==== 3.7 Dependencies
+
+Tools and libraries shall be chosen and integrated to limit tight coupling with
+Ciera as much as is possible while satisfying the requirments.
+
+=== 4 Analysis
+
+TODO
+
+==== 4.1 JPA annotations
+
+==== 4.2 JPA providers (Hibernate, others?)
+
+==== 4.3 Caching, lazy loading
+
+==== 4.4 Integrity checking (how to get change delta?)
+
+==== 4.5 Optimistic locking, retry behavior, loading data from other active processes (when and how?)
+
+==== 4.6 Multi-threading within a process (thread pool model?)
+
+==== 4.7 Performance profiling
+
+=== 5 Design
+
+TODO
+
+=== 6 Work required
+
+TODO
+
+=== 7 Implementation Comments
+
+TODO
+
+=== 8 Acceptance Test
+
+TODO
+
+=== 9 User Documentation
+
+TODO
+
+=== 10 Code Changes
+
+TODO
+
+=== 11 Document References
+
+In this section, list all the documents that the reader may need to refer to.
+Give the full path to reference a file.
+
+. [[dr-1]] https://support.onefact.net/issues/NNNNN[NNNNN - headline]
+. [[dr-2]] ...
+. [[dr-3]] link:../8073_masl_parser/8277_serial_masl_spec.md[Serial MASL (SMASL) Specification]
